@@ -29,7 +29,7 @@ cache:
   remote:
     enabled: true
     backend: redis
-    ttlSeconds: 300
+    ttlSeconds: 5
   inprocess:
     enabled: false
     ttlSeconds: 60
