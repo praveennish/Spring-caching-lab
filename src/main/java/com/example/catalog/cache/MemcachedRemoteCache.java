@@ -30,5 +30,10 @@ public class MemcachedRemoteCache implements RemoteCache<Long, Product> {
     public void put(Long key, Product value, Duration ttl) {
         client.set(key.toString(), (int) ttl.getSeconds(), value);
     }
+
+    @Override
+    public void evict(Long key) {
+        client.delete(key.toString());
+    }
 }
 

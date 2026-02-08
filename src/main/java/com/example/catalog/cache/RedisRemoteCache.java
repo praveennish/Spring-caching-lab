@@ -47,4 +47,9 @@ public class RedisRemoteCache implements RemoteCache<Long, Product> {
             throw new RuntimeException("Redis serialization failed", e);
         }
     }
+
+    @Override
+    public void evict(Long key) {
+        redisTemplate.delete(key.toString());
+    }
 }

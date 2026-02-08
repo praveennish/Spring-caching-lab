@@ -1,104 +1,80 @@
 package com.example.catalog.service;
 
 import com.example.catalog.cache.RemoteCache;
+import com.example.catalog.dto.UpdateProductRequest;
 import com.example.catalog.model.Product;
 import com.example.catalog.repository.ProductRepository;
 import com.github.benmanes.caffeine.cache.Cache;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class ProductService {
 
     private final ProductRepository repository;
-    private final Cache<Long, Product> localCache;
-    private final Optional<RemoteCache<Long, Product>> remoteCache;
-    private final boolean localCacheEnabled;
-    private final Duration remoteTtl;
+    private final ProductCacheService cacheService;
+    private final CacheVersionService versionService;
 
-    private final ConcurrentHashMap<Long, Object> keyLocks = new ConcurrentHashMap<>();
-
-    public ProductService(ProductRepository repository,
-                          Cache<Long, Product> localCache,
-                          Optional<RemoteCache<Long, Product>> remoteCache,
-                          @Value("${cache.remote.ttlSeconds}") long remoteTtlSeconds,
-                          @Value("${cache.inprocess.enabled}") boolean localCacheEnabled) {
-
+    public ProductService(
+            ProductRepository repository,
+            ProductCacheService cacheService,
+            CacheVersionService versionService
+    ) {
         this.repository = repository;
-        this.localCache = localCache;
-        this.remoteCache = remoteCache;
-        this.localCacheEnabled = localCacheEnabled;
-        this.remoteTtl = Duration.ofSeconds(remoteTtlSeconds);
+        this.cacheService = cacheService;
+        this.versionService = versionService;
     }
 
     public Product getProduct(Long id) {
-
-        // -------- L1 Cache --------
-        if (localCacheEnabled) {
-            Product local = localCache.getIfPresent(id);
-            if (local != null) {
-                return local;
-            }
+        Product cached = cacheService.get(id);
+        if (cached != null) {
+            return cached;
         }
 
-        // -------- L2 Cache --------
-        if (remoteCache.isPresent()) {
-            Optional<Product> remote = remoteCache.get().get(id);
-            if (remote.isPresent()) {
-                populateLocalCache(id, remote.get());
-                return remote.get();
-            }
-        }
+        Product product = repository.findById(id)
+                .orElseThrow();
 
-        // -------- SingleFlight DB Load --------
-        return loadThroughSingleFlight(id);
+        cacheService.put(product);
+        return product;
     }
 
-    private Product loadThroughSingleFlight(Long id) {
+    @Transactional
+    public Product updatePrice(Long id, BigDecimal price) {
 
-        Object lock = keyLocks.computeIfAbsent(id, k -> new Object());
+        Product product = repository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Product not found: " + id));
 
-        synchronized (lock) {
-            try {
-                // Double-check remote cache after acquiring lock
-                if (remoteCache.isPresent()) {
-                    Optional<Product> cached = remoteCache.get().get(id);
-                    if (cached.isPresent()) {
-                        populateLocalCache(id, cached.get());
-                        return cached.get();
-                    }
-                }
+        product.setPrice(price);
+        repository.save(product);
 
-                // DB load (only one thread per key)
-                Product db = repository.findByIdExplicit(id)
-                        .orElseThrow(() -> new RuntimeException("Product not found"));
+        // 🔥 Replace cache delete with version bump
+        versionService.bumpVersion("product");
 
-                // Populate caches exactly once
-                populateRemoteCache(id, db);
-                populateLocalCache(id, db);
-
-                return db;
-
-            } finally {
-                // Remove only if same lock instance (safety)
-                keyLocks.remove(id, lock);
-            }
-        }
+        return product;
     }
 
-    private void populateLocalCache(Long id, Product product) {
-        if (localCacheEnabled) {
-            localCache.put(id, product);
-        }
-    }
 
-    private void populateRemoteCache(Long id, Product product) {
-        remoteCache.ifPresent(cache ->
-                cache.put(id, product, remoteTtl)
-        );
+    @Transactional
+    public Product updateProduct(Long id, UpdateProductRequest request) {
+        Product product = repository.findById(id)
+                .orElseThrow();
+
+        product.setPrice(BigDecimal.valueOf(request.getPrice()));
+        product.setName(request.getName());
+
+        repository.save(product);
+
+        // 🔥 KEY IDEA
+        // Instead of deleting cache → bump version
+        versionService.bumpVersion("product");
+
+        return product;
     }
 }

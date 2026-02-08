@@ -13,6 +13,6 @@ export const options = {
 };
 
 export default function () {
-  const hotId = 1;   // 👈 force same key
-  http.get(`${BASE_URL}/api/v1/products/${hotId}`);
+  const id = Math.floor(Math.random() * 500) + 1;   // many keys
+  http.get(`${BASE_URL}/api/v1/products/${id}`);
 }

@@ -1,11 +1,12 @@
 package com.example.catalog.controller;
 
+import com.example.catalog.dto.UpdateProductRequest;
 import com.example.catalog.model.Product;
 import com.example.catalog.service.ProductService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
 
 @RestController
 @RequestMapping("/api/v1/products")
@@ -20,4 +21,22 @@ public class ProductController {
     public Product getProduct(@PathVariable Long id){
         return service.getProduct(id);
     }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<Product> updatePrice(
+            @PathVariable Long id,
+            @RequestParam BigDecimal price) {
+
+        Product updated = service.(id, price);
+        return ResponseEntity.ok(updated);
+    }
+
+    @PutMapping("/products/{id}")
+    public Product update(
+            @PathVariable Long id,
+            @RequestBody UpdateProductRequest request
+    ) {
+        return service.updateProduct(id, request);
+    }
+
 }
